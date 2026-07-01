@@ -4,43 +4,63 @@ const TTL = 45000;
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
-
   const now = Date.now();
-
   if (cache.data && (now - cache.timestamp) < TTL) {
     return res.status(200).json(cache.data);
   }
-
   try {
-    const response = await fetch(
-      'https://esport.is/api/results?game=valorant',
-      { signal: AbortSignal.timeout(8000) }
-    );
-
-    if (!response.ok) throw new Error(`Upstream returned ${response.status}`);
-
-    const raw = await response.json();
-    const transformed = transformResults(raw);
-    cache = { data: transformed, timestamp: now };
-    return res.status(200).json(transformed);
+    const html = await fetch('https://www.vlr.gg/matches', {
+      signal: AbortSignal.timeout(10000),
+      headers: { 'User-Agent': 'VCT-Fan-Site/1.0' }
+    }).then(r => { if (!r.ok) throw new Error('vlr.gg returned ' + r.status); return r.text(); });
+    const matches = parseMatches(html).filter(m => m.status === 'completed');
+    const result = { matches, count: matches.length, updatedAt: new Date().toISOString() };
+    cache = { data: result, timestamp: now };
+    return res.status(200).json(result);
   } catch (err) {
-    if (cache.data) {
-      return res.status(200).json({ ...cache.data, _stale: true });
-    }
+    if (cache.data) return res.status(200).json({ ...cache.data, _stale: true });
     return res.status(502).json({ error: true, message: '比赛结果暂时无法加载，请稍后重试' });
   }
 }
 
-function transformResults(raw) {
-  const matches = (raw.data || raw.matches || raw || []).map(m => ({
-    id: m.id || m.match_id || '',
-    teamA: m.team_a?.name || m.team1?.name || m.home?.name || 'Team A',
-    teamB: m.team_b?.name || m.team2?.name || m.away?.name || 'Team B',
-    scoreA: m.team_a?.score ?? m.team1?.score ?? m.home?.score ?? 0,
-    scoreB: m.team_b?.score ?? m.team2?.score ?? m.away?.score ?? 0,
-    winner: m.winner || (m.team_a?.score > m.team_b?.score ? 'a' : 'b'),
-    tournament: m.tournament?.name || m.event?.name || m.league?.name || '',
-    endTime: m.end_time || m.finished_at || m.date || '',
-  }));
-  return { matches, count: matches.length, updatedAt: new Date().toISOString() };
+function parseMatches(html) {
+  const matches = [];
+  const blocks = html.split('wf-module-item match-item');
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i];
+    try {
+      const hrefMatch = block.match(/href="\/(\d+)\/([^"]+)"/);
+      const id = hrefMatch ? hrefMatch[1] : '';
+      const isLive = block.includes('mod-live');
+      const hasDash = block.includes('&ndash;') || /mod-upcoming/.test(block);
+      const status = (isLive ? 'live' : (hasDash ? 'upcoming' : 'completed'));
+      const teamNames = [];
+      const nameRegex = /match-item-vs-team-name[^]*?text-of[^>]*>([^<]+(?:<[^>]+>[^<]*)?)/g;
+      let nm;
+      while ((nm = nameRegex.exec(block)) !== null) teamNames.push(nm[1].replace(/<[^>]+>/g, '').trim());
+      const scoreRegex = /match-item-vs-team-score[^>]*>\s*([\d]+)\s*</g;
+      const scores = [];
+      let sm;
+      while ((sm = scoreRegex.exec(block)) !== null) scores.push(parseInt(sm[1]));
+      const timeMatch = block.match(/match-item-time[^>]*>\s*([^<]+)\s*</);
+      const time = timeMatch ? timeMatch[1].trim() : '';
+      let event = '';
+      const seriesMatch = block.match(/match-item-event-series[^>]*>\s*([^<]+)\s*</);
+      if (seriesMatch) event = seriesMatch[1].trim();
+      const eventMatch = block.match(/match-item-event text-of[^>]*>\s*(?:<[^>]+>)*\s*([^<]+)/);
+      const mainEvent = eventMatch ? eventMatch[1].trim() : '';
+      if (event) event = mainEvent + ' - ' + event; else event = mainEvent;
+      if (teamNames.length >= 2) {
+        matches.push({
+          id, teamA: teamNames[0], teamB: teamNames[1],
+          scoreA: scores[0] ?? 0, scoreB: scores[1] ?? 0,
+          status, time,
+          winner: (scores[0] > scores[1]) ? teamNames[0] : teamNames[1],
+          tournament: event || '',
+          endTime: new Date().toISOString(),
+        });
+      }
+    } catch (e) {}
+  }
+  return matches;
 }
