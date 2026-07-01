@@ -1,94 +1,152 @@
-// ========== 导航栏滚动效果 ==========
-const navbar = document.querySelector('.navbar');
-const menuBtn = document.querySelector('.menu-btn');
-const navLinks = document.querySelector('.nav-links');
-const navLinkItems = document.querySelectorAll('.nav-links a');
+/* ========== 应用主控制器 ========== */
 
-// 滚动时导航栏添加阴影
-window.addEventListener('scroll', () => {
-    if (window.scrollY > 50) {
-        navbar.classList.add('scrolled');
-    } else {
-        navbar.classList.remove('scrolled');
-    }
-});
-
-// 移动端菜单切换
-menuBtn.addEventListener('click', () => {
-    navLinks.classList.toggle('open');
-});
-
-// 点击导航链接后关闭菜单
-navLinkItems.forEach(link => {
-    link.addEventListener('click', () => {
-        navLinks.classList.remove('open');
-    });
-});
-
-// ========== 滚动高亮当前导航 ==========
-const sections = document.querySelectorAll('section[id]');
-
-window.addEventListener('scroll', () => {
-    let current = '';
-    sections.forEach(section => {
-        const sectionTop = section.offsetTop - 100;
-        if (window.scrollY >= sectionTop) {
-            current = section.getAttribute('id');
-        }
-    });
-
-    navLinkItems.forEach(link => {
-        link.classList.remove('active');
-        if (link.getAttribute('href') === '#' + current) {
-            link.classList.add('active');
-        }
-    });
-});
-
-// ========== 表单提交提示 ==========
-const form = document.querySelector('.contact-form');
-const submitBtn = form.querySelector('button');
-
-form.addEventListener('submit', (e) => {
-    e.preventDefault();
-
-    const originalText = submitBtn.textContent;
-    submitBtn.textContent = '发送中...';
-    submitBtn.disabled = true;
-
-    // 模拟发送（可替换为真实 API 请求）
-    setTimeout(() => {
-        submitBtn.textContent = '✓ 发送成功！';
-        submitBtn.style.background = '#5bbf6a';
-        form.reset();
-
-        setTimeout(() => {
-            submitBtn.textContent = originalText;
-            submitBtn.disabled = false;
-            submitBtn.style.background = '';
-        }, 2500);
-    }, 1000);
-});
-
-// ========== 滚动渐入动画 ==========
-const observerOptions = {
-    threshold: 0.15,
-    rootMargin: '0px 0px -50px 0px',
+const appState = {
+    activeTab: 'live',
+    lastUpdate: null,
+    refreshTimer: null,
+    updateTimer: null,
 };
 
-const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-        if (entry.isIntersecting) {
-            entry.target.style.opacity = '1';
-            entry.target.style.transform = 'translateY(0)';
-        }
-    });
-}, observerOptions);
+// ----- 标签切换 -----
+const tabLinks = document.querySelectorAll('.nav-links a[data-tab]');
+const tabContents = document.querySelectorAll('.tab-content');
 
-// 为各区块添加初始隐藏 + 渐入效果
-document.querySelectorAll('.skill-card, .project-card, .stat').forEach(el => {
-    el.style.opacity = '0';
-    el.style.transform = 'translateY(30px)';
-    el.style.transition = 'all 0.6s ease';
-    observer.observe(el);
+tabLinks.forEach(link => {
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const tab = link.dataset.tab;
+        switchTab(tab);
+    });
 });
+
+function switchTab(tab) {
+    appState.activeTab = tab;
+
+    tabLinks.forEach(l => l.classList.remove('active'));
+    document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
+
+    tabContents.forEach(s => s.classList.remove('active'));
+    document.getElementById('tab-' + tab)?.classList.add('active');
+
+    fetchDataForTab(tab);
+}
+
+// ----- 数据获取 -----
+async function fetchDataForTab(tab) {
+    showSkeleton(tab);
+
+    try {
+        let data;
+        switch (tab) {
+            case 'live':     data = await fetchLiveMatches(); break;
+            case 'upcoming': data = await fetchUpcomingMatches(); break;
+            case 'results':  data = await fetchResults(); break;
+            case 'rankings': data = await fetchRankings(); break;
+        }
+
+        if (data && data.error) throw new Error(data.message);
+
+        switch (tab) {
+            case 'live':     renderLiveMatches(data); break;
+            case 'upcoming': renderUpcomingMatches(data); break;
+            case 'results':  renderResults(data); break;
+            case 'rankings':
+                rankingData = data;
+                filterRankings(document.querySelector('.region-btn.active')?.dataset?.region || 'all');
+                break;
+        }
+
+        appState.lastUpdate = new Date();
+        updateTimeDisplay();
+
+    } catch (err) {
+        showError(tab, err.message);
+    }
+}
+
+// ----- 更新时间显示 -----
+function updateTimeDisplay() {
+    if (!appState.lastUpdate) return;
+    const seconds = Math.floor((new Date() - appState.lastUpdate) / 1000);
+    const text = seconds < 10 ? '刚刚更新' : `${seconds}秒前更新`;
+    document.getElementById('update-text').textContent = text;
+}
+
+// ----- 自动刷新 -----
+function startAutoRefresh() {
+    if (appState.refreshTimer) clearInterval(appState.refreshTimer);
+    if (appState.updateTimer) clearInterval(appState.updateTimer);
+
+    // 每 45 秒刷新当前标签的数据
+    appState.refreshTimer = setInterval(() => {
+        fetchDataForTab(appState.activeTab);
+    }, 45000);
+
+    // 每秒更新 "X秒前更新" 文字
+    appState.updateTimer = setInterval(updateTimeDisplay, 1000);
+}
+
+// ----- 重试按钮 -----
+document.querySelectorAll('.btn-retry').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        if (tab) fetchDataForTab(tab);
+    });
+});
+
+// ----- 移动端菜单 -----
+const menuBtn = document.querySelector('.menu-btn');
+const navMenu = document.querySelector('.nav-links');
+menuBtn?.addEventListener('click', () => navMenu?.classList.toggle('open'));
+navMenu?.querySelectorAll('a').forEach(a => a.addEventListener('click', () => navMenu.classList.remove('open')));
+
+// ----- 离线检测 -----
+const offlineBanner = document.getElementById('offline-banner');
+window.addEventListener('offline', () => offlineBanner?.classList.remove('hidden'));
+window.addEventListener('online', () => {
+    offlineBanner?.classList.add('hidden');
+    fetchDataForTab(appState.activeTab);
+});
+
+// ----- 排名区域筛选 -----
+let rankingData = null;
+
+document.querySelectorAll('.region-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.region-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        filterRankings(btn.dataset.region);
+    });
+});
+
+function filterRankings(region) {
+    if (!rankingData) return;
+    if (region === 'all') {
+        renderRankings(rankingData);
+        return;
+    }
+    const filtered = {
+        ...rankingData,
+        teams: rankingData.teams?.filter(t =>
+            (t.region || '').toLowerCase().includes(region.toLowerCase())
+        ) || []
+    };
+    if (filtered.teams.length === 0) {
+        showEmpty('rankings');
+    } else {
+        renderRankings(filtered);
+    }
+}
+
+// ----- 初始化 -----
+function init() {
+    fetchDataForTab(appState.activeTab);
+    startAutoRefresh();
+}
+
+init();
+
+// 如果离线就显示提示
+if (!navigator.onLine) {
+    offlineBanner?.classList.remove('hidden');
+}
