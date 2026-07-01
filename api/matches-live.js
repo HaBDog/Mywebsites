@@ -28,65 +28,69 @@ export default async function handler(req, res) {
 
 function parseMatches(html) {
   const matches = [];
-  // Find all match item blocks
   const blocks = html.split('wf-module-item match-item');
   for (let i = 1; i < blocks.length; i++) {
     const block = blocks[i];
     try {
-      // Extract href and match ID
       const hrefMatch = block.match(/href="\/(\d+)\/([^"]+)"/);
       const id = hrefMatch ? hrefMatch[1] : '';
 
-      // Check status
+      // 状态判断：检查 score div 是否包含 mod-upcoming / mod-live
       const isLive = block.includes('mod-live');
-      const isUpcoming = block.includes('mod-upcoming') || block.includes('mod-upcoming');
-      const isCompleted = !isLive && !block.includes('mod-upcoming') && !block.includes('&ndash;');
+      const isUpcoming = /match-item-vs-team-score[^>]*mod-upcoming/.test(block);
 
       let status = 'completed';
       if (isLive) status = 'live';
-      else if (block.includes('&ndash;') && !block.includes('mod-live')) status = 'upcoming';
+      else if (isUpcoming) status = 'upcoming';
 
-      // Team names
+      // 队伍名：先提取整个 match-item-vs-team-name 块，再清理 HTML
       const teamNames = [];
-      const nameRegex = /match-item-vs-team-name[^]*?text-of[^>]*>([^<]+(?:<[^>]+>[^<]*)?)/g;
-      let nameMatch;
-      while ((nameMatch = nameRegex.exec(block)) !== null) {
-        teamNames.push(nameMatch[1].replace(/<[^>]+>/g, '').trim());
+      const nameBlockRegex = /match-item-vs-team-name[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g;
+      let nbMatch;
+      while ((nbMatch = nameBlockRegex.exec(block)) !== null) {
+        // 去掉所有 HTML 标签和多余空白，得到纯文本队名
+        let name = nbMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (name) teamNames.push(name);
       }
 
-      // Scores
-      const scoreRegex = /match-item-vs-team-score[^>]*>\s*([\d\–\-\—]+)\s*</g;
+      // 比分：匹配 score div 中的数字或 &ndash;
+      const scoreRegex = /match-item-vs-team-score[^>]*>\s*([\d]+|&ndash;|–|—)\s*</g;
       const scores = [];
       let scoreMatch;
       while ((scoreMatch = scoreRegex.exec(block)) !== null) {
         const s = scoreMatch[1].trim();
-        scores.push(s === '–' || s === '-' || s === '—' ? null : parseInt(s));
+        if (s === '&ndash;' || s === '–' || s === '—') {
+          scores.push(null);
+        } else {
+          scores.push(parseInt(s));
+        }
       }
 
-      // Time
+      // 时间
       const timeMatch = block.match(/match-item-time[^>]*>\s*([^<]+)\s*</);
       const time = timeMatch ? timeMatch[1].trim() : '';
 
-      // ETA / countdown
+      // ETA（倒计时，在 ml-eta 内）
       const etaMatch = block.match(/ml-eta[^>]*>\s*([^<]+)\s*</);
       const eta = etaMatch ? etaMatch[1].trim() : '';
 
-      // Status text
+      // 状态文字（LIVE / Upcoming）
       const statusMatch = block.match(/ml-status[^>]*>\s*([^<]+)\s*</);
       const statusText = statusMatch ? statusMatch[1].trim() : '';
 
-      // Event / tournament
-      const eventMatch = block.match(/match-item-event text-of[^>]*>\s*(?:<[^>]+>)*\s*([^<]+)/);
+      // 赛事名
       let event = '';
-      if (block.includes('match-item-event-series')) {
-        const seriesMatch = block.match(/match-item-event-series[^>]*>\s*([^<]+)\s*</);
-        event = seriesMatch ? seriesMatch[1].trim() : '';
-      }
-      if (!event) {
-        event = eventMatch ? eventMatch[1].trim() : '';
-      } else {
-        const mainEvent = eventMatch ? eventMatch[1].trim() : '';
-        event = mainEvent ? mainEvent + ' - ' + event : event;
+      const seriesMatch = block.match(/match-item-event-series[^>]*>\s*([^<]+)\s*</);
+      if (seriesMatch) event = seriesMatch[1].trim();
+      // 主赛事名在 match-item-event 块中，跳过嵌套的子 div
+      const eventBlockMatch = block.match(/match-item-event text-of[^>]*>([\s\S]*?)<\/div>\s*(?:<div[^>]*match-item-icon|<\/a>)/);
+      if (eventBlockMatch) {
+        // 先去掉嵌套的 series div
+        const cleaned = eventBlockMatch[1].replace(/<div[^>]*match-item-event-series[\s\S]*?<\/div>/g, '');
+        const mainEvent = cleaned.replace(/<[^>]+>/g, '').trim();
+        if (mainEvent) {
+          event = event ? mainEvent + ' - ' + event : mainEvent;
+        }
       }
 
       if (teamNames.length >= 2) {

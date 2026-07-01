@@ -110,22 +110,37 @@ function renderResults(data) {
 }
 
 // ----- 渲染排名 -----
-function renderRankings(data) {
+function renderRankings(teams) {
     const container = document.getElementById('rankings-container');
-    if (!data || !data.teams || data.teams.length === 0) {
+    if (!teams || teams.length === 0) {
         showEmpty('rankings');
         return;
     }
     hideSkeleton('rankings');
 
-    const rows = data.teams.map(t => `
+    const rows = teams.map(t => {
+        const logoHtml = t.logo
+            ? `<img src="${t.logo}" alt="${t.team}" class="team-logo" onerror="this.style.display='none'">`
+            : '';
+        const countryHtml = t.country
+            ? `<span class="team-country">${t.country}</span>`
+            : '';
+
+        return `
         <tr>
             <td class="rank-col">#${t.rank}</td>
-            <td class="team-col">${t.team}</td>
-            <td class="rating-col">${Math.round(t.rating)}</td>
-            <td class="record-col">${t.wins}W - ${t.losses}L</td>
-        </tr>
-    `).join('');
+            <td class="team-col">
+                <div class="team-cell">
+                    ${logoHtml}
+                    <div class="team-info">
+                        <span class="team-name-text">${t.team}</span>
+                        ${countryHtml}
+                    </div>
+                </div>
+            </td>
+            <td class="rating-col">${t.rating}</td>
+        </tr>`;
+    }).join('');
 
     container.innerHTML = `
         <table class="rankings-table">
@@ -134,7 +149,6 @@ function renderRankings(data) {
                     <th>#</th>
                     <th>战队</th>
                     <th>评分</th>
-                    <th>战绩</th>
                 </tr>
             </thead>
             <tbody>${rows}</tbody>

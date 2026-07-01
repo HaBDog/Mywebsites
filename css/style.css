@@ -226,8 +226,24 @@ main { padding: 32px 0 40px; }
 .rankings-table tbody tr:hover { background: var(--bg-tertiary); }
 
 .rank-col { font-weight: 800; color: var(--accent-cyan); min-width: 40px; }
-.team-col { font-weight: 600; }
-.rating-col { color: var(--accent); font-weight: 700; }
+.rankings-table .team-col { font-weight: 600; min-width: 200px; }
+.team-cell {
+    display: flex; align-items: center; gap: 10px;
+}
+.team-logo {
+    width: 28px; height: 28px; border-radius: 50%;
+    object-fit: contain; background: rgba(255,255,255,0.05);
+}
+.team-info {
+    display: flex; flex-direction: column; gap: 2px;
+}
+.team-name-text {
+    font-weight: 600; color: var(--text-primary);
+}
+.team-country {
+    font-size: 0.72rem; color: var(--text-muted);
+}
+.rating-col { color: var(--accent); font-weight: 700; min-width: 60px; }
 .record-col { color: var(--text-secondary); }
 .region-col { color: var(--text-muted); font-size: 0.8rem; }
 

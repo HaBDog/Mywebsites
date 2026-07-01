@@ -51,7 +51,8 @@ async function fetchDataForTab(tab) {
             case 'upcoming': renderUpcomingMatches(data); break;
             case 'results':  renderResults(data); break;
             case 'rankings':
-                rankingData = data;
+                // data.regions = { "Europe": [...], "North America": [...], ... }
+                rankingData = data.regions || {};
                 filterRankings(document.querySelector('.region-btn.active')?.dataset?.region || 'all');
                 break;
         }
@@ -120,21 +121,37 @@ document.querySelectorAll('.region-btn').forEach(btn => {
 });
 
 function filterRankings(region) {
-    if (!rankingData) return;
+    if (!rankingData || Object.keys(rankingData).length === 0) return;
+
+    let teams = [];
+
     if (region === 'all') {
-        renderRankings(rankingData);
-        return;
+        // 合并所有区域，按评分降序排列，取前 30
+        for (const regionTeams of Object.values(rankingData)) {
+            teams = teams.concat(regionTeams);
+        }
+        teams.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+        teams = teams.slice(0, 30);
+    } else {
+        // 精确匹配区域名称
+        if (rankingData[region]) {
+            teams = rankingData[region];
+        } else {
+            // 尝试模糊匹配
+            for (const [key, val] of Object.entries(rankingData)) {
+                if (key.toLowerCase().includes(region.toLowerCase()) ||
+                    region.toLowerCase().includes(key.toLowerCase())) {
+                    teams = val;
+                    break;
+                }
+            }
+        }
     }
-    const filtered = {
-        ...rankingData,
-        teams: rankingData.teams?.filter(t =>
-            (t.region || '').toLowerCase().includes(region.toLowerCase())
-        ) || []
-    };
-    if (filtered.teams.length === 0) {
+
+    if (teams.length === 0) {
         showEmpty('rankings');
     } else {
-        renderRankings(filtered);
+        renderRankings(teams);
     }
 }
 

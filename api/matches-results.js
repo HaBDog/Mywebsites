@@ -32,24 +32,38 @@ function parseMatches(html) {
       const hrefMatch = block.match(/href="\/(\d+)\/([^"]+)"/);
       const id = hrefMatch ? hrefMatch[1] : '';
       const isLive = block.includes('mod-live');
-      const hasDash = block.includes('&ndash;') || /mod-upcoming/.test(block);
-      const status = (isLive ? 'live' : (hasDash ? 'upcoming' : 'completed'));
+      const isUpcoming = /match-item-vs-team-score[^>]*mod-upcoming/.test(block);
+      const status = (isLive ? 'live' : (isUpcoming ? 'upcoming' : 'completed'));
+
+      // 队伍名：提取整个 match-item-vs-team-name 块，清理 HTML
       const teamNames = [];
-      const nameRegex = /match-item-vs-team-name[^]*?text-of[^>]*>([^<]+(?:<[^>]+>[^<]*)?)/g;
-      let nm;
-      while ((nm = nameRegex.exec(block)) !== null) teamNames.push(nm[1].replace(/<[^>]+>/g, '').trim());
+      const nameBlockRegex = /match-item-vs-team-name[^>]*>([\s\S]*?)<\/div>\s*<\/div>/g;
+      let nbMatch;
+      while ((nbMatch = nameBlockRegex.exec(block)) !== null) {
+        let name = nbMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (name) teamNames.push(name);
+      }
+
+      // 比分
       const scoreRegex = /match-item-vs-team-score[^>]*>\s*([\d]+)\s*</g;
       const scores = [];
       let sm;
       while ((sm = scoreRegex.exec(block)) !== null) scores.push(parseInt(sm[1]));
+
       const timeMatch = block.match(/match-item-time[^>]*>\s*([^<]+)\s*</);
       const time = timeMatch ? timeMatch[1].trim() : '';
+
+      // 赛事名
       let event = '';
       const seriesMatch = block.match(/match-item-event-series[^>]*>\s*([^<]+)\s*</);
       if (seriesMatch) event = seriesMatch[1].trim();
-      const eventMatch = block.match(/match-item-event text-of[^>]*>\s*(?:<[^>]+>)*\s*([^<]+)/);
-      const mainEvent = eventMatch ? eventMatch[1].trim() : '';
-      if (event) event = mainEvent + ' - ' + event; else event = mainEvent;
+      const eventBlockMatch = block.match(/match-item-event text-of[^>]*>([\s\S]*?)<\/div>\s*(?:<div[^>]*match-item-icon|<\/a>)/);
+      if (eventBlockMatch) {
+        const cleaned = eventBlockMatch[1].replace(/<div[^>]*match-item-event-series[\s\S]*?<\/div>/g, '');
+        const mainEvent = cleaned.replace(/<[^>]+>/g, '').trim();
+        if (mainEvent) event = event ? mainEvent + ' - ' + event : mainEvent;
+      }
+
       if (teamNames.length >= 2) {
         matches.push({
           id, teamA: teamNames[0], teamB: teamNames[1],
